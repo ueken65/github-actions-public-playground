@@ -38,9 +38,11 @@ jobs:
             // 変更行数を計算(除外パターンを適用)
             const base = context.payload.pull_request.base.sha;
             const head = context.payload.pull_request.head.sha;
-            const diffStats = execSync(`git diff --numstat ${base} ${head} -- . ${excludePatterns}`).toString().trim();
+            const command = `git diff --numstat ${base} ${head} -- . ${excludePatterns}`;
+            console.log("command:", command);
 
-            console.log("diffStats:", diffStats);
+            const diffStats = execSync(command).toString().trim();
+            console.log("diffStats:\n", diffStats);
 
             // 変更行数の合計を計算
             const totalChanges = diffStats
