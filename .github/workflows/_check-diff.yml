@@ -40,6 +40,8 @@ jobs:
             const head = context.payload.pull_request.head.sha;
             const diffStats = execSync(`git diff --numstat ${base} ${head} -- . ${excludePatterns}`).toString().trim();
 
+            console.log("diffStats:", diffStats);
+
             // 変更行数の合計を計算
             const totalChanges = diffStats
               .split('\n')
@@ -48,6 +50,8 @@ jobs:
                 const [additions, deletions] = line.split('\t').map(Number);
                 return sum + additions + deletions;
               }, 0);
+
+            console.log("totalChanges:", totalChanges);
 
             if (totalChanges > THRESHOLD) {              
               const comments = await github.rest.issues.listComments({
