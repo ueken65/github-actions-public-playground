@@ -31,7 +31,7 @@ jobs:
             const { execSync } = require('child_process');
 
             const THRESHOLD = ${{ inputs.threshold_lines }};
-            const excludePatterns = '${{ inputs.exclude_patterns }}'.split(',')
+            const excludePatterns = '${{ inputs.exclude_patterns }}'.split(',').filter(p => p !== '')
               .map(p => `':(exclude)${p.trim()}'`).join(' '); // git diffのパターン除外形式に変換
 
             // 変更行数を計算(除外パターンを適用)
