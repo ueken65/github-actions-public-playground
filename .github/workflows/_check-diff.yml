@@ -1,0 +1,84 @@
+name: Check PR Size
+
+on:
+  workflow_call:
+    inputs:
+      threshold_lines:
+        description: "PRの変更行数の閾値"
+        type: number
+        default: 100
+        required: false
+      exclude_patterns:
+        description: "行数計測から除外するファイルパターン(カンマ区切り)"
+        type: string
+        default: "**/*.json,**/*.lock"
+        required: false
+
+jobs:
+  check-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR size
+        uses: actions/github-script@v7
+        env:
+          WARNING_ID_COMMENT: "<!-- PR_SIZE_CHECK_WARNING -->"
+        with:
+          script: |
+            const { WARNING_ID_COMMENT } = process.env;
+            const { execSync } = require('child_process');
+
+            const THRESHOLD = ${{ inputs.threshold_lines }};
+            const excludePatterns = '${{ inputs.exclude_patterns }}'.split(',').map(p => p.trim());
+
+            // 変更されたファイルの一覧を取得
+            const base = context.payload.pull_request.base.sha;
+            const head = context.payload.pull_request.head.sha;
+            const diffFiles = execSync(`git diff --name-only ${base} ${head}`).toString().trim().split('\n');
+
+            // 除外パターンにマッチしないファイルのみを対象に変更行数を計算
+            let totalChanges = 0;
+            for (const file of diffFiles) {
+              // ファイルが除外パターンにマッチするかチェック
+              const shouldExclude = excludePatterns.some(pattern => {
+                const regex = new RegExp(pattern.replace(/\*/g, '.*'));
+                return regex.test(file);
+              });
+
+              if (!shouldExclude) {
+                // git diffを使用して各ファイルの変更行数を取得
+                const changes = execSync(`git diff --numstat ${base} ${head} -- "${file}"`).toString().trim();
+                if (changes) {
+                  const [additions, deletions] = changes.split('\t').map(Number);
+                  totalChanges += additions + deletions;
+                }
+              }
+            }
+
+            if (totalChanges > THRESHOLD) {              
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number
+              });
+              
+              for (const comment of comments.data) {
+                if (comment.body.includes(WARNING_ID_COMMENT)) {
+                  await github.rest.issues.deleteComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: comment.id
+                  });
+                }
+              }
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `> [!WARNING]\n> PR の変更行数が ${THRESHOLD} 行を超えています(${totalChanges}行)。\n> レビューの効率と品質を保つため、可能であれば PR を小さく分割することを検討してください。\nまた、必要であれば PullRequest に「team+除外」ラベルを付けて Findy team+ の計測対象から外してください。\n${WARNING_ID_COMMENT}`
+              });
+            }
