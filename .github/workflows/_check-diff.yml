@@ -32,31 +32,22 @@ jobs:
             const { execSync } = require('child_process');
 
             const THRESHOLD = ${{ inputs.threshold_lines }};
-            const excludePatterns = '${{ inputs.exclude_patterns }}'.split(',').map(p => p.trim());
+            const excludePatterns = '${{ inputs.exclude_patterns }}'.split(',')
+              .map(p => `:!${p.trim()}`).join(' '); // git diffのパターン除外形式に変換
 
-            // 変更されたファイルの一覧を取得
+            // 変更行数を計算(除外パターンを適用)
             const base = context.payload.pull_request.base.sha;
             const head = context.payload.pull_request.head.sha;
-            const diffFiles = execSync(`git diff --name-only ${base} ${head}`).toString().trim().split('\n');
+            const diffStats = execSync(`git diff --numstat ${base} ${head} -- . ${excludePatterns}`).toString().trim();
 
-            // 除外パターンにマッチしないファイルのみを対象に変更行数を計算
-            let totalChanges = 0;
-            for (const file of diffFiles) {
-              // ファイルが除外パターンにマッチするかチェック
-              const shouldExclude = excludePatterns.some(pattern => {
-                const regex = new RegExp(pattern.replace(/\*/g, '.*'));
-                return regex.test(file);
-              });
-
-              if (!shouldExclude) {
-                // git diffを使用して各ファイルの変更行数を取得
-                const changes = execSync(`git diff --numstat ${base} ${head} -- "${file}"`).toString().trim();
-                if (changes) {
-                  const [additions, deletions] = changes.split('\t').map(Number);
-                  totalChanges += additions + deletions;
-                }
-              }
-            }
+            // 変更行数の合計を計算
+            const totalChanges = diffStats
+              .split('\n')
+              .filter(line => line.trim())
+              .reduce((sum, line) => {
+                const [additions, deletions] = line.split('\t').map(Number);
+                return sum + additions + deletions;
+              }, 0);
 
             if (totalChanges > THRESHOLD) {              
               const comments = await github.rest.issues.listComments({
