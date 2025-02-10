@@ -9,9 +9,8 @@ on:
         default: 100
         required: false
       exclude_patterns:
-        description: "行数計測から除外するファイルパターン(カンマ区切り)"
+        description: "行数計測から除外するファイルパターン(カンマ区切り) ex: './*.lock, ./**/*.md'"
         type: string
-        default: "**/*.json,**/*.lock"
         required: false
 
 jobs:
@@ -33,7 +32,7 @@ jobs:
 
             const THRESHOLD = ${{ inputs.threshold_lines }};
             const excludePatterns = '${{ inputs.exclude_patterns }}'.split(',')
-              .map(p => `:!${p.trim()}`).join(' '); // git diffのパターン除外形式に変換
+              .map(p => `':(exclude)${p.trim()}'`).join(' '); // git diffのパターン除外形式に変換
 
             // 変更行数を計算(除外パターンを適用)
             const base = context.payload.pull_request.base.sha;
