@@ -9,3 +9,4 @@ jobs:
     uses: ./.github/workflows/_check-diff.yml
     with:
       threshold_lines: 100
+      exclude_patterns: "./*.lock"
