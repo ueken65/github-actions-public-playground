@@ -65,14 +65,11 @@ jobs:
             const allFiles = await getAllPRFiles();
             console.log(`PR内の合計ファイル数: ${allFiles.length}`);
 
-            // GitHub Actionのglobライブラリを使用
-            const globLib = require('@actions/glob');
-
             // globパターンに一致するかをチェックする関数
             async function matchesGlobPattern(filePath, pattern) {
               try {
                 // @actions/globでパターンに一致するか確認
-                const globber = await globLib.create(pattern);
+                const globber = await glob.create(pattern);
                 
                 // globパターンのマッチングはファイルパスをシンプルに文字列比較
                 const matchesPattern = await globber.glob();
