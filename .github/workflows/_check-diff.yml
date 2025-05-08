@@ -81,7 +81,6 @@ jobs:
               
               // いずれかの除外パターンに一致する場合は除外
               for (const pattern of excludePatterns) {
-                console.log(`ファイル '${file.filename}' とパターン '${pattern}' のマッチング結果: ${minimatch(file.filename, pattern, { matchBase: true })}`);
                 if (minimatch(file.filename, pattern, { matchBase: true })) {
                   console.log(`ファイル '${file.filename}' はパターン '${pattern}' に一致して除外されます`);
                   shouldExclude = true;
