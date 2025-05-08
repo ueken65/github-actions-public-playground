@@ -21,6 +21,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+      - run: npm ci
+      - run: npm install minimatch
       - name: Check PR size
         uses: actions/github-script@v7
         env:
@@ -65,60 +70,32 @@ jobs:
             const allFiles = await getAllPRFiles();
             console.log(`PR内の合計ファイル数: ${allFiles.length}`);
 
-            // globパターンに一致するかをチェックする関数
-            async function matchesGlobPattern(filePath, pattern) {
-              try {
-                // @actions/globでパターンに一致するか確認
-                const globber = await glob.create(pattern);
-                
-                // globパターンのマッチングはファイルパスをシンプルに文字列比較
-                const matchesPattern = await globber.glob();
-
-                console.log(globber.getSearchPaths());
-                
-                // 完全なパスでないとマッチしないため、ファイル名だけの比較も行う
-                if (matchesPattern.includes(filePath)) {
-                  return true;
-                }
-                
-                // ベースネームのチェック（ファイル名のみ）
-                const fileName = filePath.split('/').pop();
-                return globber.globMatch([fileName]).length > 0;
-              } catch (error) {
-                // エラーが発生した場合はログを出して除外しない
-                console.error(`パターン '${pattern}' でのマッチング中にエラー:`, error);
-                return false;
-              }
-            }
+            // minimatchを使用してパターンマッチング
+            const minimatch = require('minimatch');
 
             // 除外パターンを適用して変更行数を計算
-            async function filterFiles() {
-              const filteredFiles = [];
-              const excludedFiles = [];
+            const filteredFiles = [];
+            const excludedFiles = [];
+
+            for (const file of allFiles) {
+              let shouldExclude = false;
               
-              for (const file of allFiles) {
-                let shouldExclude = false;
-                
-                // いずれかの除外パターンに一致する場合は除外
-                for (const pattern of excludePatterns) {
-                  if (await matchesGlobPattern(file.filename, pattern)) {
-                    console.log(`ファイル '${file.filename}' はパターン '${pattern}' に一致して除外されます`);
-                    shouldExclude = true;
-                    break;
-                  }
-                }
-                
-                if (shouldExclude) {
-                  excludedFiles.push(file);
-                } else {
-                  filteredFiles.push(file);
+              // いずれかの除外パターンに一致する場合は除外
+              for (const pattern of excludePatterns) {
+                if (minimatch(file.filename, pattern, { matchBase: true })) {
+                  console.log(`ファイル '${file.filename}' はパターン '${pattern}' に一致して除外されます`);
+                  shouldExclude = true;
+                  break;
                 }
               }
               
-              return { filteredFiles, excludedFiles };
+              if (shouldExclude) {
+                excludedFiles.push(file);
+              } else {
+                filteredFiles.push(file);
+              }
             }
 
-            const { filteredFiles, excludedFiles } = await filterFiles();
             console.log(`計測対象ファイル数: ${filteredFiles.length} / ${allFiles.length}`);
 
             if (excludedFiles.length > 0) {
