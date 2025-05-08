@@ -62,6 +62,7 @@ jobs:
 
             const allFiles = await getAllPRFiles();
             console.log(`PR内の合計ファイル数: ${allFiles.length}`);
+            console.log(allFiles);
 
             // 除外パターンに一致しないファイルだけをフィルタリング
             function shouldIncludeFile(filename) {
