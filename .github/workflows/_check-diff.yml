@@ -65,92 +65,34 @@ jobs:
             const allFiles = await getAllPRFiles();
             console.log(`PR内の合計ファイル数: ${allFiles.length}`);
 
-            // PR内のすべてのファイル名を出力
-            console.log("PR内のファイル一覧:");
-            allFiles.forEach(file => {
-              console.log(`- ${file.filename} (追加: ${file.additions}, 削除: ${file.deletions})`);
-            });
+            // 除外パターンを適用して変更行数を計算
+            const minimatch = require('minimatch');
+            const filteredFiles = [];
+            const excludedFiles = [];
 
-            // シンプルな文字列マッチングの関数
-            function isMatchByString(filename, pattern) {
-              if (pattern === './*.lock') {
-                // ./*.lock パターンの特別処理
-                // 拡張子が .lock で、ディレクトリの深さが1以下（ルートまたは1階層下）
-                const hasSingleDir = filename.split('/').length <= 2;
-                const hasLockExt = filename.endsWith('.lock');
-                return hasSingleDir && hasLockExt;
-              }
-              
-              // 他のパターンは後で実装
-              return false;
-            }
-
-            // 除外パターンに一致しないファイルだけをフィルタリング
-            function shouldIncludeFile(filename) {
-              // 除外パターンが指定されていない場合はすべて含む
-              if (excludePatterns.length === 0) return true;
+            for (const file of allFiles) {
+              let shouldExclude = false;
               
               // いずれかの除外パターンに一致する場合は除外
               for (const pattern of excludePatterns) {
-                // 文字列ベースでマッチング判定
-                if (isMatchByString(filename, pattern)) {
-                  console.log(`ファイル '${filename}' は文字列マッチでパターン '${pattern}' に一致して除外されます`);
-                  return false;
-                }
-                
-                // グロブパターンから正規表現に変換
-                try {
-                  // 特殊なケースを処理
-                  if (pattern === './*.lock') {
-                    // ./*.lock は「ルートディレクトリ直下の .lock ファイル」を意味する
-                    const regex = /^[^\/]*\.lock$/;
-                    console.log(`パターン '${pattern}' → 特殊処理正規表現 '${regex.toString()}'`);
-                    
-                    if (regex.test(filename)) {
-                      console.log(`ファイル '${filename}' はパターン '${pattern}' に一致して除外されます`);
-                      return false;
-                    }
-                    
-                    continue;
-                  }
-                  
-                  // 汎用的なグロブ処理
-                  let regexPattern = pattern;
-                  
-                  // 先頭の "./" は省略可能
-                  if (regexPattern.startsWith('./')) {
-                    regexPattern = regexPattern.substring(2);
-                  }
-                  
-                  // * を任意の文字に変換
-                  regexPattern = regexPattern.replace(/\*\*/g, '.*');
-                  regexPattern = regexPattern.replace(/\*/g, '[^/]*');
-                  
-                  // .を\.にエスケープ
-                  regexPattern = regexPattern.replace(/\./g, '\\.');
-                  
-                  const regex = new RegExp(`^${regexPattern}$`);
-                  
-                  console.log(`パターン '${pattern}' → 正規表現 '${regex.toString()}'`);
-                  
-                  if (regex.test(filename)) {
-                    console.log(`ファイル '${filename}' はパターン '${pattern}' に一致して除外されます`);
-                    return false;
-                  }
-                } catch (error) {
-                  console.error(`パターン '${pattern}' の正規表現変換でエラー: ${error.message}`);
+                if (minimatch(file.filename, pattern, { matchBase: true })) {
+                  console.log(`ファイル '${file.filename}' はパターン '${pattern}' に一致して除外されます`);
+                  shouldExclude = true;
+                  break;
                 }
               }
               
-              return true; // どの除外パターンにも一致しない
+              if (shouldExclude) {
+                excludedFiles.push(file);
+              } else {
+                filteredFiles.push(file);
+              }
             }
 
-            // 除外パターンを適用して変更行数を計算
-            const filteredFiles = allFiles.filter(file => shouldIncludeFile(file.filename));
             console.log(`計測対象ファイル数: ${filteredFiles.length} / ${allFiles.length}`);
 
-            if (filteredFiles.length < allFiles.length) {
-              console.log(`除外されたファイル: ${allFiles.filter(f => !shouldIncludeFile(f.filename)).map(f => f.filename).join(', ')}`);
+            if (excludedFiles.length > 0) {
+              console.log(`除外されたファイル: ${excludedFiles.map(f => f.filename).join(', ')}`);
             }
 
             const totalChanges = filteredFiles.reduce((sum, file) => sum + file.additions + file.deletions, 0);
