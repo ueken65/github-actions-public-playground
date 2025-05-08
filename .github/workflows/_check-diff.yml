@@ -28,31 +28,67 @@ jobs:
         with:
           script: |
             const { WARNING_ID_COMMENT } = process.env;
-            const { execSync } = require('child_process');
-
             const THRESHOLD = ${{ inputs.threshold_lines }};
-            const excludePatterns = '${{ inputs.exclude_patterns }}'.split(',').filter(p => p !== '')
-              .map(p => `':(exclude)${p.trim()}'`).join(' '); // git diffのパターン除外形式に変換
+            const excludePatterns = ('${{ inputs.exclude_patterns }}'.trim() || '').split(',')
+              .filter(p => p.trim() !== '')
+              .map(p => p.trim());
 
-            // 変更行数を計算(除外パターンを適用)
-            const base = context.payload.pull_request.base.sha;
-            const head = context.payload.pull_request.head.sha;
-            const command = `git diff --numstat ${base} ${head} -- . ${excludePatterns}`;
-            console.log("command:", command);
+            // PRのファイル一覧を取得
+            const filesResponse = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100 // 一度に取得するファイル数を増やす
+            });
 
-            const diffStats = execSync(command).toString().trim();
-            console.log("diffStats:\n", diffStats);
+            console.log(`PR内のファイル数: ${filesResponse.data.length}`);
 
-            // 変更行数の合計を計算
-            const totalChanges = diffStats
-              .split('\n')
-              .filter(line => line.trim())
-              .reduce((sum, line) => {
-                const [additions, deletions] = line.split('\t').map(Number);
-                return sum + additions + deletions;
-              }, 0);
+            // ページネーションがある場合は全ファイルを取得
+            let allFiles = filesResponse.data;
+            let page = 1;
 
-            console.log("totalChanges:", totalChanges);
+            while (github.hasNextPage(filesResponse)) {
+              page++;
+              const nextResponse = await github.getNextPage(filesResponse);
+              allFiles = allFiles.concat(nextResponse.data);
+              console.log(`ページ ${page} のファイル数: ${nextResponse.data.length}`);
+            }
+
+            console.log(`PR内の合計ファイル数: ${allFiles.length}`);
+
+            // 除外パターンに一致しないファイルだけをフィルタリング
+            function shouldIncludeFile(filename) {
+              // 除外パターンが指定されていない場合はすべて含む
+              if (excludePatterns.length === 0) return true;
+              
+              // いずれかの除外パターンに一致する場合は除外
+              for (const pattern of excludePatterns) {
+                // minimatchのような正確なglobパターンマッチングではなく簡易的な判定
+                // "*"をワイルドカードとして使用
+                const regexPattern = pattern
+                  .replace(/\./g, '\\.')  // ドットをエスケープ
+                  .replace(/\*\*/g, '.*') // ** を .* に置換（任意の文字列）
+                  .replace(/\*/g, '[^/]*'); // * を [^/]* に置換（ディレクトリ区切り以外の任意の文字）
+                
+                const regex = new RegExp(`^${regexPattern}$`);
+                if (regex.test(filename)) {
+                  return false; // 除外パターンに一致
+                }
+              }
+              
+              return true; // どの除外パターンにも一致しない
+            }
+
+            // 除外パターンを適用して変更行数を計算
+            const filteredFiles = allFiles.filter(file => shouldIncludeFile(file.filename));
+            console.log(`計測対象ファイル数: ${filteredFiles.length} / ${allFiles.length}`);
+
+            if (filteredFiles.length < allFiles.length) {
+              console.log(`除外されたファイル: ${allFiles.filter(f => !shouldIncludeFile(f.filename)).map(f => f.filename).join(', ')}`);
+            }
+
+            const totalChanges = filteredFiles.reduce((sum, file) => sum + file.additions + file.deletions, 0);
+            console.log(`計測対象の変更行数: ${totalChanges}`);
 
             if (totalChanges > THRESHOLD) {              
               const comments = await github.rest.issues.listComments({
@@ -75,6 +111,6 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body: `> [!WARNING]\n> PR の変更行数が ${THRESHOLD} 行を超えています(${totalChanges}行)。\n> レビューの効率と品質を保つため、可能であれば PR を小さく分割することを検討してください。\nまた、必要であれば PullRequest に「team+除外」ラベルを付けて Findy team+ の計測対象から外してください。\n${WARNING_ID_COMMENT}`
+                body: `> [!WARNING]\n> 行数計測対象のファイルの差分が ${THRESHOLD} 行を超えています(${totalChanges}行)。\n> レビューの効率と品質を保つため、可能であれば PR を小さく分割することを検討してください。\nまた、必要であれば PullRequest に「team+除外」ラベルを付けて Findy team+ の計測対象から外してください。\n${WARNING_ID_COMMENT}`
               });
             }
