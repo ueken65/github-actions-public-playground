@@ -33,6 +33,8 @@ jobs:
               .filter(p => p.trim() !== '')
               .map(p => p.trim());
 
+            console.log("除外パターン:", excludePatterns);
+
             // PRのファイル一覧を取得（ページネーション対応）
             async function getAllPRFiles() {
               let allFiles = [];
@@ -62,7 +64,6 @@ jobs:
 
             const allFiles = await getAllPRFiles();
             console.log(`PR内の合計ファイル数: ${allFiles.length}`);
-            console.log(allFiles);
 
             // 除外パターンに一致しないファイルだけをフィルタリング
             function shouldIncludeFile(filename) {
@@ -71,15 +72,26 @@ jobs:
               
               // いずれかの除外パターンに一致する場合は除外
               for (const pattern of excludePatterns) {
-                // minimatchのような正確なglobパターンマッチングではなく簡易的な判定
-                // "*"をワイルドカードとして使用
-                const regexPattern = pattern
-                  .replace(/\./g, '\\.')  // ドットをエスケープ
-                  .replace(/\*\*/g, '.*') // ** を .* に置換（任意の文字列）
-                  .replace(/\*/g, '[^/]*'); // * を [^/]* に置換（ディレクトリ区切り以外の任意の文字）
+                // ファイルマッチング用の正規表現パターンを作成
+                // パターンをJavaScriptの正規表現に変換
+                let regexPattern = pattern
+                  // 特殊文字をエスケープ
+                  .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+                  // "**" を任意のパスに一致するパターンに変換
+                  .replace(/\\\*\\\*/g, '.*')
+                  // "*" を任意の文字列（ディレクトリ区切り以外）に変換
+                  .replace(/\\\*/g, '[^/]*');
+                  
+                // 先頭の "./" は任意（あってもなくてもよい）
+                regexPattern = regexPattern.replace(/^\\\.\\\//g, '(\\./)?');
                 
+                // ファイル名全体に一致するよう、先頭と末尾のアンカーを追加
                 const regex = new RegExp(`^${regexPattern}$`);
+                
+                console.log(`パターン '${pattern}' → 正規表現 '${regex.toString()}'`);
+                
                 if (regex.test(filename)) {
+                  console.log(`ファイル '${filename}' はパターン '${pattern}' に一致して除外されます`);
                   return false; // 除外パターンに一致
                 }
               }
