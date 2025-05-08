@@ -65,6 +65,26 @@ jobs:
             const allFiles = await getAllPRFiles();
             console.log(`PR内の合計ファイル数: ${allFiles.length}`);
 
+            // PR内のすべてのファイル名を出力
+            console.log("PR内のファイル一覧:");
+            allFiles.forEach(file => {
+              console.log(`- ${file.filename} (追加: ${file.additions}, 削除: ${file.deletions})`);
+            });
+
+            // シンプルな文字列マッチングの関数
+            function isMatchByString(filename, pattern) {
+              if (pattern === './*.lock') {
+                // ./*.lock パターンの特別処理
+                // 拡張子が .lock で、ディレクトリの深さが1以下（ルートまたは1階層下）
+                const hasSingleDir = filename.split('/').length <= 2;
+                const hasLockExt = filename.endsWith('.lock');
+                return hasSingleDir && hasLockExt;
+              }
+              
+              // 他のパターンは後で実装
+              return false;
+            }
+
             // 除外パターンに一致しないファイルだけをフィルタリング
             function shouldIncludeFile(filename) {
               // 除外パターンが指定されていない場合はすべて含む
@@ -72,39 +92,53 @@ jobs:
               
               // いずれかの除外パターンに一致する場合は除外
               for (const pattern of excludePatterns) {
-                // グロブパターンから正規表現に変換する関数
-                function globToRegExp(glob) {
-                  // 先頭の "./" を処理（任意にする）
-                  let processedGlob = glob;
-                  if (processedGlob.startsWith('./')) {
-                    processedGlob = `(\\./)?${processedGlob.substring(2)}`;
-                  }
-                  
-                  // 特殊文字をエスケープ（*と?以外）
-                  let regexStr = processedGlob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-                  
-                  // ** を一時的なプレースホルダーに置き換え
-                  regexStr = regexStr.replace(/\*\*/g, '{{DOUBLE_STAR}}');
-                  
-                  // * を[^/]*に置き換え（ディレクトリ区切り以外の任意の文字列）
-                  regexStr = regexStr.replace(/\*/g, '[^/]*');
-                  
-                  // **のプレースホルダーを.*に戻す（任意のパス）
-                  regexStr = regexStr.replace(/\{\{DOUBLE_STAR\}\}/g, '.*');
-                  
-                  // ?を任意の1文字に置き換え
-                  regexStr = regexStr.replace(/\?/g, '.');
-                  
-                  return new RegExp(`^${regexStr}$`);
+                // 文字列ベースでマッチング判定
+                if (isMatchByString(filename, pattern)) {
+                  console.log(`ファイル '${filename}' は文字列マッチでパターン '${pattern}' に一致して除外されます`);
+                  return false;
                 }
                 
-                const regex = globToRegExp(pattern);
-                console.log(`パターン '${pattern}' → 正規表現 '${regex.toString()}'`);
-                
-                // ファイル名をパターンと比較（./を含む場合と含まない場合の両方を試す）
-                if (regex.test(filename)) {
-                  console.log(`ファイル '${filename}' はパターン '${pattern}' に一致して除外されます`);
-                  return false; // 除外パターンに一致
+                // グロブパターンから正規表現に変換
+                try {
+                  // 特殊なケースを処理
+                  if (pattern === './*.lock') {
+                    // ./*.lock は「ルートディレクトリ直下の .lock ファイル」を意味する
+                    const regex = /^[^\/]*\.lock$/;
+                    console.log(`パターン '${pattern}' → 特殊処理正規表現 '${regex.toString()}'`);
+                    
+                    if (regex.test(filename)) {
+                      console.log(`ファイル '${filename}' はパターン '${pattern}' に一致して除外されます`);
+                      return false;
+                    }
+                    
+                    continue;
+                  }
+                  
+                  // 汎用的なグロブ処理
+                  let regexPattern = pattern;
+                  
+                  // 先頭の "./" は省略可能
+                  if (regexPattern.startsWith('./')) {
+                    regexPattern = regexPattern.substring(2);
+                  }
+                  
+                  // * を任意の文字に変換
+                  regexPattern = regexPattern.replace(/\*\*/g, '.*');
+                  regexPattern = regexPattern.replace(/\*/g, '[^/]*');
+                  
+                  // .を\.にエスケープ
+                  regexPattern = regexPattern.replace(/\./g, '\\.');
+                  
+                  const regex = new RegExp(`^${regexPattern}$`);
+                  
+                  console.log(`パターン '${pattern}' → 正規表現 '${regex.toString()}'`);
+                  
+                  if (regex.test(filename)) {
+                    console.log(`ファイル '${filename}' はパターン '${pattern}' に一致して除外されます`);
+                    return false;
+                  }
+                } catch (error) {
+                  console.error(`パターン '${pattern}' の正規表現変換でエラー: ${error.message}`);
                 }
               }
               
