@@ -70,7 +70,7 @@ jobs:
             console.log(`PR内の合計ファイル数: ${allFiles.length}`);
 
             // minimatchを使用してパターンマッチング
-            const minimatch = require('minimatch');
+            const { minimatch } = require('minimatch');
 
             // 除外パターンを適用して変更行数を計算
             const filteredFiles = [];
