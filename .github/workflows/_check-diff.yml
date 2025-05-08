@@ -33,27 +33,34 @@ jobs:
               .filter(p => p.trim() !== '')
               .map(p => p.trim());
 
-            // PRのファイル一覧を取得
-            const filesResponse = await github.rest.pulls.listFiles({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-              per_page: 100 // 一度に取得するファイル数を増やす
-            });
-
-            console.log(`PR内のファイル数: ${filesResponse.data.length}`);
-
-            // ページネーションがある場合は全ファイルを取得
-            let allFiles = filesResponse.data;
-            let page = 1;
-
-            while (github.hasNextPage(filesResponse)) {
-              page++;
-              const nextResponse = await github.getNextPage(filesResponse);
-              allFiles = allFiles.concat(nextResponse.data);
-              console.log(`ページ ${page} のファイル数: ${nextResponse.data.length}`);
+            // PRのファイル一覧を取得（ページネーション対応）
+            async function getAllPRFiles() {
+              let allFiles = [];
+              let page = 1;
+              let hasMorePages = true;
+              
+              while (hasMorePages) {
+                const response = await github.rest.pulls.listFiles({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.issue.number,
+                  per_page: 100,
+                  page: page
+                });
+                
+                allFiles = allFiles.concat(response.data);
+                console.log(`ページ ${page} のファイル数: ${response.data.length}`);
+                
+                // 次のページがあるかどうかを確認
+                // 返されたデータが一度に取得可能な最大数（per_page）と同じなら次のページがある可能性がある
+                hasMorePages = response.data.length === 100;
+                page++;
+              }
+              
+              return allFiles;
             }
 
+            const allFiles = await getAllPRFiles();
             console.log(`PR内の合計ファイル数: ${allFiles.length}`);
 
             // 除外パターンに一致しないファイルだけをフィルタリング
