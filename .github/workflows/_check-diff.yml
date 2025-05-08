@@ -72,24 +72,36 @@ jobs:
               
               // いずれかの除外パターンに一致する場合は除外
               for (const pattern of excludePatterns) {
-                // ファイルマッチング用の正規表現パターンを作成
-                // パターンをJavaScriptの正規表現に変換
-                let regexPattern = pattern
-                  // 特殊文字をエスケープ
-                  .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-                  // "**" を任意のパスに一致するパターンに変換
-                  .replace(/\\\*\\\*/g, '.*')
-                  // "*" を任意の文字列（ディレクトリ区切り以外）に変換
-                  .replace(/\\\*/g, '[^/]*');
+                // グロブパターンから正規表現に変換する関数
+                function globToRegExp(glob) {
+                  // 先頭の "./" を処理（任意にする）
+                  let processedGlob = glob;
+                  if (processedGlob.startsWith('./')) {
+                    processedGlob = `(\\./)?${processedGlob.substring(2)}`;
+                  }
                   
-                // 先頭の "./" は任意（あってもなくてもよい）
-                regexPattern = regexPattern.replace(/^\\\.\\\//g, '(\\./)?');
+                  // 特殊文字をエスケープ（*と?以外）
+                  let regexStr = processedGlob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+                  
+                  // ** を一時的なプレースホルダーに置き換え
+                  regexStr = regexStr.replace(/\*\*/g, '{{DOUBLE_STAR}}');
+                  
+                  // * を[^/]*に置き換え（ディレクトリ区切り以外の任意の文字列）
+                  regexStr = regexStr.replace(/\*/g, '[^/]*');
+                  
+                  // **のプレースホルダーを.*に戻す（任意のパス）
+                  regexStr = regexStr.replace(/\{\{DOUBLE_STAR\}\}/g, '.*');
+                  
+                  // ?を任意の1文字に置き換え
+                  regexStr = regexStr.replace(/\?/g, '.');
+                  
+                  return new RegExp(`^${regexStr}$`);
+                }
                 
-                // ファイル名全体に一致するよう、先頭と末尾のアンカーを追加
-                const regex = new RegExp(`^${regexPattern}$`);
-                
+                const regex = globToRegExp(pattern);
                 console.log(`パターン '${pattern}' → 正規表現 '${regex.toString()}'`);
                 
+                // ファイル名をパターンと比較（./を含む場合と含まない場合の両方を試す）
                 if (regex.test(filename)) {
                   console.log(`ファイル '${filename}' はパターン '${pattern}' に一致して除外されます`);
                   return false; // 除外パターンに一致
