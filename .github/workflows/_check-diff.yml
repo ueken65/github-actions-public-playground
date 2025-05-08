@@ -73,6 +73,8 @@ jobs:
                 
                 // globパターンのマッチングはファイルパスをシンプルに文字列比較
                 const matchesPattern = await globber.glob();
+
+                console.log(matchesPattern);
                 
                 // 完全なパスでないとマッチしないため、ファイル名だけの比較も行う
                 if (matchesPattern.includes(filePath)) {
