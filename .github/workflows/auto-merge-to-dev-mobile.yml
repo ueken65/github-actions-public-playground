@@ -1,16 +1,3 @@
-# このワークフローは、PR に「dev-mobileアップ済み」ラベルが付与された時に自動実行されます。
-#
-# 動作:
-# 1. Test ワークフロー (test.yml) が実行され、成功していることを確認
-#    - テストが未実行または失敗の場合: コメント投稿 + ラベル削除 + 終了
-# 2. PR のブランチを develop_mobile にマージ
-#    - マージ成功時: 何もせず終了
-#    - コンフリクト発生時: コメント投稿 + マージ中止 + 終了
-# 3. マージ成功時は develop_mobile に自動プッシュし、デプロイが開始されます
-#
-# 注意:
-# - マージはラベルを付与したユーザーのアカウントで実行されます
-# - すでにマージ済みの場合は、何もせず成功として終了します
 name: Auto Merge to Dev Mobile
 
 on:
@@ -44,15 +31,8 @@ jobs:
 
             const run = data.workflow_runs[0];
 
-            // デバッグ用：ワークフロー実行の詳細をログ出力
-            if (run) {
-              core.info(`Workflow run found: ID=${run.id}, status=${run.status}, conclusion=${run.conclusion}`);
-            } else {
-              core.info('No workflow run found for this commit');
-            }
-
             // テストが実行されており、かつ成功している場合は処理を続行
-            if (run && run.status === 'completed' && run.conclusion === 'success') {
+            if (run && run.conclusion === 'success') {
               core.info('Test workflow is successful. Proceeding with merge.');
               return;
             }
