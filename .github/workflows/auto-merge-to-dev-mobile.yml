@@ -1,0 +1,120 @@
+name: Auto Merge to Dev Mobile
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  auto-merge:
+    if: github.event.label.name == 'dev-mobileアップ済み'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Test workflow status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const workflowFileName = 'test.yml';
+            const sha = context.payload.pull_request.head.sha;
+
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflowFileName,
+              head_sha: sha,
+              per_page: 1,
+            });
+
+            const run = data.workflow_runs[0];
+
+            // テストが実行されており、かつ成功している場合は処理を続行
+            if (run && run.conclusion === 'success') {
+              core.info('Test workflow is successful. Proceeding with merge.');
+              return;
+            }
+
+            // テストが実行されていないか、成功していない場合
+            const message = !run
+              ? '⚠️ **Test ワークフローが実行されていません**\n\nこのPRを `develop_mobile` にマージする前に、Test ワークフローを実行して成功させてください。'
+              : '⚠️ **Test ワークフローが成功していません**\n\nこのPRを `develop_mobile` にマージする前に、テストを通してください。';
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: message
+            });
+
+            await github.rest.issues.removeLabel({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'dev-mobileアップ済み'
+            });
+
+            core.setFailed(run ? 'Test workflow is not successful. Aborting.' : 'Test workflow has not run for this commit yet.');
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "${{ github.event.sender.login }}"
+          git config user.email "${{ github.event.sender.id }}+${{ github.event.sender.login }}@users.noreply.github.com"
+
+      - name: Fetch and merge to develop_mobile
+        id: merge
+        run: |
+          # 最新の develop_mobile をフェッチ
+          git fetch origin develop_mobile
+
+          # develop_mobile にチェックアウト
+          git checkout develop_mobile
+
+          # PR のブランチをマージ
+          if git merge --no-ff origin/${{ github.head_ref }} -m "Merge PR #${{ github.event.pull_request.number }} into develop_mobile"; then
+            echo "merge_status=success" >> $GITHUB_OUTPUT
+
+            # develop_mobile にプッシュ
+            git push origin develop_mobile
+          else
+            # コンフリクトが発生した場合
+            echo "merge_status=conflict" >> $GITHUB_OUTPUT
+            git merge --abort
+            exit 1
+          fi
+
+      - name: Comment on PR - Conflict
+        if: failure() && steps.merge.outputs.merge_status == 'conflict'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `❌ **develop_mobile への自動マージに失敗しました**
+
+            ブランチ \`${{ github.head_ref }}\` を \`develop_mobile\` にマージしようとしましたが、コンフリクトが発生しました。
+
+            以下の手順で手動でマージしてください：
+            \`\`\`bash
+            git fetch origin
+            git checkout develop_mobile
+            git pull origin develop_mobile
+            git merge origin/${{ github.head_ref }}
+            # コンフリクトを解決
+            git push origin develop_mobile
+            \`\`\`
+
+            マージ試行者: @${{ github.event.sender.login }}`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
